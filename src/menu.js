@@ -61,8 +61,10 @@ document.addEventListener('keydown', (event) => {
     }
 });
 
-PokiSDK.init({
-    //debug: true,
-});
+if (window.PokiSDK) {
+    PokiSDK.init({
+        //debug: true,
+    });
+}
 
 checkLoaded();

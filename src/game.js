@@ -1,12 +1,16 @@
 import * as PIXI from 'pixi.js';
 import Stats from 'stats.js';
 import { default as EventEmitter } from 'eventemitter3';
-import * as particles from '@pixi/particle-emitter';
 
-import { Asteroid } from './asteroid';
-import { Ship } from './ship';
+import { Tower } from './tower';
+import { Player } from './player';
+import { Enemy } from './enemy';
 
 const resumeTimeout = 500;
+
+const gridX = 28;
+const gridY = 14;
+const gridSize = 30;
 
 export class Game extends EventEmitter {
     constructor(loader) {
@@ -248,34 +252,114 @@ export class Game extends EventEmitter {
         this.gameover = 0;
         this.worldScale = 1;
 
-        this.asteroidsContainer = new PIXI.Container();
-        this.laserContainer = new PIXI.Container();
-        this.shipContainer = new PIXI.Container();
-        this.emittersContainer = new particles.LinkedListContainer();
+        this.levelContainer = new PIXI.Container();
+        this.gridOverlayContainer = new PIXI.Container();
+        this.towerContainer = new PIXI.Container();
+        this.enemiesContainer = new PIXI.Container();
 
-        this.worldContainer.addChild(this.asteroidsContainer);
-        this.worldContainer.addChild(this.laserContainer);
-        this.worldContainer.addChild(this.shipContainer);
-        this.worldContainer.addChild(this.emittersContainer);
-
-        this.ship = new Ship(0, 0, this);
-        this.shipContainer.addChild(this.ship);
+        this.worldContainer.addChild(this.levelContainer);
+        this.worldContainer.addChild(this.towerContainer);
+        this.worldContainer.addChild(this.gridOverlayContainer);
+        this.worldContainer.addChild(this.enemiesContainer);
 
         this.resize();
 
-        // Add 10 asteroids to the world at random positions not too close to the center.
-        for (let i = 0; i < 10; i++) {
-            let x = 0;
-            let y = 0;
-            while ((x < 50 && x > -50) || (y < 50 && y > -50)) {
-                x = (Math.random() - 0.5) * this.screenWidth;
-                y = (Math.random() - 0.5) * this.screenHeight;
+        this.grid = [];
+        for (let x = 0; x < gridX; x++) {
+            this.grid[x] = [];
+            for (let y = 0; y < gridY; y++) {
+                this.grid[x][y] = 0;
             }
-            const asteroid = new Asteroid(x, y);
-            this.asteroidsContainer.addChild(asteroid);
+        }
+
+        this.buildGrid();
+
+        let tower;
+        
+        tower = new Tower(6, 1, 'crate', this);
+        this.towerContainer.addChild(tower);
+
+        tower = new Tower(6, 5, 'gun', this);
+        this.towerContainer.addChild(tower);
+
+        tower = new Tower(12, 5, 'gun', this);
+        this.towerContainer.addChild(tower);
+
+        tower = new Tower(12, 11, 'gun', this);
+        this.towerContainer.addChild(tower);
+
+        tower = new Tower(16, 5, 'gun', this);
+        this.towerContainer.addChild(tower);
+
+        //tower = new Tower(6, 10, 'spikes', this);
+        this.towerContainer.addChild(tower);
+
+        // flame
+        // sniper
+        // tesla
+        // freeze
+        // grinder
+
+        this.player = new Player(25, 7, this);
+        this.worldContainer.addChild(this.player);
+
+        this.buildGridOverlay();
+        this.gridOverlayContainer.visible = false;
+
+        const startX = -this.halfScreenWidth + (this.screenWidth - gridX * gridSize) / 2;
+        const gridHeight = gridY * gridSize;
+        for (let i = 0; i < 5; i++) {
+            const e = new Enemy(startX, -this.halfScreenHeight + 100 +  Math.random() * gridHeight);
+            this.enemiesContainer.addChild(e);
         }
 
         this.mainLoop();
+    }
+
+    buildGrid() {
+        const lineAlpha = 0.1;
+        this.gridStartX = (this.screenWidth - gridX * gridSize) / 2;
+        this.gridStartY = 100;
+        for (let x = 4; x < gridX; x++) {
+            for (let y = 0; y < gridY; y++) {
+                const g = new PIXI.Graphics();
+                g.lineStyle(1, 0xffffff, lineAlpha);
+                g.drawRect(-this.halfScreenWidth + this.gridStartX + x * gridSize, -this.halfScreenHeight + this.gridStartY + y * gridSize, gridSize, gridSize);
+                this.levelContainer.addChild(g);
+            }
+        }
+        const g = new PIXI.Graphics();
+        g.lineStyle(1, 0xffffff, lineAlpha);
+        g.drawRect(-this.halfScreenWidth + this.gridStartX, -this.halfScreenHeight + this.gridStartY, gridSize * gridX, gridSize * gridY);
+        this.levelContainer.addChild(g);
+    }
+
+    buildGridOverlay() {
+        for (let x = 4; x < gridX; x++) {
+            for (let y = 0; y < gridY; y++) {
+                if (this.grid[x][y] > 0) {
+                    const g = new PIXI.Graphics();
+                    g.beginFill(0xff0000, 0.5);
+                    g.drawRect(-this.halfScreenWidth + this.gridStartX + x * gridSize, -this.halfScreenHeight + this.gridStartY + y * gridSize, gridSize, gridSize);
+                    g.endFill();
+                    this.gridOverlayContainer.addChild(g);
+                }
+            }
+        }
+    }
+
+    gridPositionToWorldPosition(x, y) {
+        return {
+            x: -this.halfScreenWidth + this.gridStartX + x * gridSize,
+            y: -this.halfScreenHeight + this.gridStartY + y * gridSize,
+        };
+    }
+
+    worldPositionToGridPosition(x, y) {
+        return {
+            x: Math.round((x + this.halfScreenWidth - this.gridStartX) / gridSize),
+            y: Math.round((y + this.halfScreenHeight - this.gridStartY) / gridSize),
+        };
     }
 
     setWorldScale(scale) {
@@ -439,47 +523,6 @@ export class Game extends EventEmitter {
         return true;
     }
 
-    // Wrap around the screen if the object is outside the screen.
-    // Returns [x, y, which side the object wrapped around to].
-    wrapAround(x, y, s) {
-        let w = '';
-
-        if (x + s < -this.halfScreenWidth) {
-            x = this.halfScreenWidth + s;
-
-            if (this.portrait) {
-                w = 'top';
-            } else {
-                w = 'left';
-            }
-        } else if (x - s > this.halfScreenWidth) {
-            x = -this.halfScreenWidth - s;
-            if (this.portrait) {
-                w = 'bottom';
-            } else {
-                w = 'right';
-            }
-        }
-
-        if (y + s < -this.halfScreenHeight) {
-            y = this.halfScreenHeight + s;
-            if (this.portrait) {
-                w = 'right';
-            } else {
-                w = 'top';
-            }
-        } else if (y - s > this.halfScreenHeight) {
-            y = -this.halfScreenHeight - s;
-            if (this.portrait) {
-                w = 'left';
-            } else {
-                w = 'bottom';
-            }
-        }
-
-        return [x, y, w];
-    }
-
     touchmove(event) {
         event.preventDefault();
     }
@@ -554,44 +597,6 @@ export class Game extends EventEmitter {
             x = y;
             y = -tmp;
         }
-
-        this.ship.pointermove(x, y);
-    }
-
-    checkCollisions() {
-        // Tight collision check loops to make full use of the CPU caches and JIT optimizations.
-        for (let i = 0; i < this.laserContainer.children.length; i++) {
-            const laser = this.laserContainer.children[i];
-
-            for (let j = 0; j < this.asteroidsContainer.children.length; j++) {
-                const asteroid = this.asteroidsContainer.children[j];
-
-                const dx = asteroid.x - laser.x;
-                const dy = asteroid.y - laser.y;
-                const d = Math.sqrt(dx * dx + dy * dy);
-
-                if (d < asteroid.size / 2) {
-                    asteroid.hit(this);
-
-                    laser.destroy();
-                    i--;
-                    break;
-                }
-            }
-        }
-
-        for (let i = 0; i < this.asteroidsContainer.children.length; i++) {
-            const asteroid = this.asteroidsContainer.children[i];
-
-            const dx = asteroid.x - this.ship.x;
-            const dy = asteroid.y - this.ship.y;
-            const d = Math.sqrt(dx * dx + dy * dy);
-
-            if (d < asteroid.size / 2 + this.ship.size / 2) {
-                this.die();
-                break;
-            }
-        }
     }
 
     die() {
@@ -623,33 +628,23 @@ export class Game extends EventEmitter {
             // If it's gameover we don't update anything.
             if (!this.gameover) {
                 // Tight update loops to make full use of the CPU caches and JIT optimizations.
-                for (let i = 0; i < this.asteroidsContainer.children.length; i++) {
-                    const asteroid = this.asteroidsContainer.children[i];
+                for (let i = 0; i < this.enemiesContainer.children.length; i++) {
+                    const enemy = this.enemiesContainer.children[i];
 
-                    asteroid.update(delta, this);
+                    enemy.update(delta, this);
 
                     // If the asteroid is destroyed it will get remove from the container
                     // so we need to decrement i to not skip the next asteroid.
-                    if (asteroid.destroyed) {
+                    if (enemy.destroyed) {
                         i--;
                     }
                 }
 
-                for (let i = 0; i < this.laserContainer.children.length; i++) {
-                    const laser = this.laserContainer.children[i];
+                for (let i = 0; i < this.towerContainer.children.length; i++) {
+                    const tower = this.towerContainer.children[i];
 
-                    laser.update(delta, this);
-
-                    // If the laser is destroyed it will get remove from the container
-                    // so we need to decrement i to not skip the next laser.
-                    if (laser.destroyed) {
-                        i--;
-                    }
+                    tower.update(delta, this);
                 }
-
-                this.ship.update(delta, this);
-
-                this.checkCollisions();
             }
 
             this.statsEnd();

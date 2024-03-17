@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js';
 import { Assets } from '@pixi/assets';
 import { default as EventEmitter } from 'eventemitter3';
 
-import { init as initAsteroid } from './asteroid';
+import { init as initEnemy } from './enemy';
 import { Sounds } from './sounds';
 import { isSafari14OrLower } from './util';
 
@@ -85,7 +85,7 @@ export class Loader extends EventEmitter {
         // Each entry is a function that either performs the task sync or returns a promise.
         [
             () => {
-                initAsteroid(this.app);
+                initEnemy(this.app);
             },
             () => {
                 this.sounds = new Sounds();
@@ -101,8 +101,10 @@ export class Loader extends EventEmitter {
                 this.loadingBar = null;
                 this.loadingText = null;
 
-                PokiSDK.gameLoadingFinished();
-                PokiSDK.setPlaytestCanvas(this.canvas);
+                if (window.PokiSDK) {
+                    PokiSDK.gameLoadingFinished();
+                    PokiSDK.setPlaytestCanvas(this.canvas);
+                }
 
                 this.done = true;
 

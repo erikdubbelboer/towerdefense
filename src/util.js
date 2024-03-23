@@ -74,6 +74,24 @@ export function smoothLine(g, from, to, fromSize, toSize, fromColor, toColor, fr
 
 // Intersections (see also: https://davidfig.github.io/intersects/)
 
+// pointInBox returns true if point p (x, y) is inside the box
+// with width pw, height pw and position pb (x, y).
+export function pointInBox(p, pb, pw, ph) {
+    if (p.x < pb.x - pw/2) {
+        return false;
+    }
+    if (p.x > pb.x + pw/2) {
+        return false;
+    }
+    if (p.y < pb.y - ph/2) {
+        return false;
+    }
+    if (p.y > pb.y + ph/2) {
+        return false;
+    }
+    return true;
+}
+
 // lineLineIntersection returns true if the lines intersect, false otherwise.
 export function lineLineIntersection(p1, p2, p3, p4) {
     const s1_x = p2.x - p1.x;

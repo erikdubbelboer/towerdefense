@@ -2,7 +2,10 @@ import * as PIXI from 'pixi.js';
 import Stats from 'stats.js';
 import { default as EventEmitter } from 'eventemitter3';
 
-import { Tower } from './tower';
+import { createWorld, step as stepPhysics, destroy as destroyPhysics } from './physics';
+import { pointInBox } from './util';
+import { aStar } from './astar';
+import { Tower, towerTextures } from './tower';
 import { Player } from './player';
 import { Enemy } from './enemy';
 
@@ -256,19 +259,43 @@ export class Game extends EventEmitter {
         this.gridOverlayContainer = new PIXI.Container();
         this.towerContainer = new PIXI.Container();
         this.enemiesContainer = new PIXI.Container();
+        this.uiContainer = new PIXI.Container();
 
         this.worldContainer.addChild(this.levelContainer);
         this.worldContainer.addChild(this.towerContainer);
         this.worldContainer.addChild(this.gridOverlayContainer);
         this.worldContainer.addChild(this.enemiesContainer);
+        this.worldContainer.addChild(this.uiContainer);
 
         this.resize();
+
+        const buttons = ['crate', 'gun', 'spikes', 'flame'];
+        for (let i = 0; i < buttons.length; i++) {
+            const button = new PIXI.Container();
+            button.scale.set(0.5);
+            button.type = buttons[i];
+            this.uiContainer.addChild(button);
+            const s = new PIXI.Sprite(towerTextures[button.type]);
+            s.anchor.set(0.5);
+            button.addChild(s);
+            const g = new PIXI.Graphics();
+            g.lineStyle(4, 0xffffff);
+            g.drawRect(-100, -100, 200, 200);
+            button.addChild(g);
+
+            button.position.x = 120 * (i - buttons.length / 2);
+        }
+
+        createWorld();
 
         this.grid = [];
         for (let x = 0; x < gridX; x++) {
             this.grid[x] = [];
             for (let y = 0; y < gridY; y++) {
-                this.grid[x][y] = 0;
+                this.grid[x][y] = {
+                    place: 0,
+                    nav: 0,
+                };
             }
         }
 
@@ -277,22 +304,32 @@ export class Game extends EventEmitter {
         let tower;
         
         tower = new Tower(6, 1, 'crate', this);
+        tower.putdown(this);
         this.towerContainer.addChild(tower);
 
         tower = new Tower(6, 5, 'gun', this);
+        tower.putdown(this);
         this.towerContainer.addChild(tower);
 
         tower = new Tower(12, 5, 'gun', this);
+        tower.putdown(this);
         this.towerContainer.addChild(tower);
 
         tower = new Tower(12, 11, 'gun', this);
+        tower.putdown(this);
         this.towerContainer.addChild(tower);
 
         tower = new Tower(16, 5, 'gun', this);
+        tower.putdown(this);
         this.towerContainer.addChild(tower);
 
-        //tower = new Tower(6, 10, 'spikes', this);
+        tower = new Tower(6, 10, 'spikes', this);
+        tower.putdown(this);
         this.towerContainer.addChild(tower);
+
+        //tower = new Tower(8, -1, 'flame', this);
+        //tower.putdown(this);
+        //this.towerContainer.addChild(tower);
 
         // flame
         // sniper
@@ -303,17 +340,61 @@ export class Game extends EventEmitter {
         this.player = new Player(25, 7, this);
         this.worldContainer.addChild(this.player);
 
-        this.buildGridOverlay();
         this.gridOverlayContainer.visible = false;
 
         const startX = -this.halfScreenWidth + (this.screenWidth - gridX * gridSize) / 2;
         const gridHeight = gridY * gridSize;
-        for (let i = 0; i < 5; i++) {
-            const e = new Enemy(startX, -this.halfScreenHeight + 100 +  Math.random() * gridHeight);
-            this.enemiesContainer.addChild(e);
-        }
+
+        let enemiesToSpawn = 1000;
+        const cancelSpawnInterval = this.interval(() => {
+            const n = 4;
+            for (let i = 0; i < n; i++) {
+                const e = new Enemy(startX, -this.halfScreenHeight + 100 +  Math.random() * gridHeight);
+                this.enemiesContainer.addChild(e);
+            }
+            enemiesToSpawn -= n;
+            if (enemiesToSpawn <= 0) {
+                cancelSpawnInterval();
+            }
+        }, 1000);
 
         this.mainLoop();
+    }
+
+    gridSetNav(x, y, nav) {
+        if (x >= 0 && x < this.grid.length) {
+            if (y >= 0 && y < this.grid[x].length) {
+                this.grid[x][y].nav += nav;
+            }
+        }
+    }
+
+    gridSetPlace(x, y, place) {
+        if (x >= 0 && x < this.grid.length) {
+            if (y >= 0 && y < this.grid[x].length) {
+                this.grid[x][y].place += place;
+            }
+        }
+    }
+
+    gridGetNav(x, y) {
+        if (x >= 0 && x < this.grid.length) {
+            if (y >= 0 && y < this.grid[x].length) {
+                return this.grid[x][y].nav;
+            }
+        }
+
+        return 1;
+    }
+
+    gridGetPlace(x, y) {
+        if (x >= 0 && x < this.grid.length) {
+            if (y >= 0 && y < this.grid[x].length) {
+                return this.grid[x][y].place;
+            }
+        }
+
+        return 1;
     }
 
     buildGrid() {
@@ -335,9 +416,13 @@ export class Game extends EventEmitter {
     }
 
     buildGridOverlay() {
+        while (this.gridOverlayContainer.children.length > 0) {
+            this.gridOverlayContainer.children[0].destroy({ children: true });
+        }
+
         for (let x = 4; x < gridX; x++) {
             for (let y = 0; y < gridY; y++) {
-                if (this.grid[x][y] > 0) {
+                if (this.grid[x][y].place > 0) {
                     const g = new PIXI.Graphics();
                     g.beginFill(0xff0000, 0.5);
                     g.drawRect(-this.halfScreenWidth + this.gridStartX + x * gridSize, -this.halfScreenHeight + this.gridStartY + y * gridSize, gridSize, gridSize);
@@ -413,6 +498,8 @@ export class Game extends EventEmitter {
         }
 
         this.worldContainer.filterArea = new PIXI.Rectangle(0, 0, this.app.screen.width, this.app.screen.height);
+
+        this.uiContainer.position.y = this.halfScreenHeight - 50;
     }
 
     // Execute f every frame.
@@ -582,10 +669,60 @@ export class Game extends EventEmitter {
         if (event.button === 2) {
             console.log('right mouse click at', x, y);
         }
+
+        for (let i = 0; i < this.towerContainer.children.length; i++) {
+            const tower = this.towerContainer.children[i];
+
+            if (tower.isOn(x, y)) {
+                this.setGameSpeed(0.1);
+                tower.liftup(this);
+                this.selectedTower = tower;
+                this.buildGridOverlay();
+                this.gridOverlayContainer.visible = true;
+                break;
+            }
+        }
+
+        for (let i = 0; i < this.uiContainer.children.length; i++) {
+            const button = this.uiContainer.children[i];
+
+            const b = button.getBounds();
+            if (pointInBox(event.data.global, {
+                x: b.x + (b.width / 2),
+                y: b.y + (b.height / 2),
+            }, b.width, b.height)) {
+                const tower = new Tower(0, 0, button.type, this);
+                this.towerContainer.addChild(tower);
+
+                this.selectedTower = tower;
+
+                const gp = this.worldPositionToGridPosition(x, y);
+                const wp = this.gridPositionToWorldPosition(gp.x, gp.y);
+
+                this.selectedTower.gp = gp;
+                this.selectedTower.x = wp.x;
+                this.selectedTower.y = wp.y;
+                this.selectedTower.placingValid = true;
+
+                this.setGameSpeed(0.1);
+                this.buildGridOverlay();
+                this.gridOverlayContainer.visible = true;
+                break;
+            }
+        }
     }
 
     pointerup() {
-        //console.log('pointerup');
+        if (this.selectedTower) {
+            if (!this.selectedTower.placingValid) {
+                this.selectedTower.destroy();
+            } else {
+                this.selectedTower.putdown(this);
+            }
+            this.selectedTower = null;
+            this.setGameSpeed(1);
+            this.gridOverlayContainer.visible = false;
+        }
     }
 
     pointermove(event) {
@@ -596,6 +733,33 @@ export class Game extends EventEmitter {
             const tmp = x;
             x = y;
             y = -tmp;
+        }
+
+        if (this.selectedTower) {
+            const gp = this.worldPositionToGridPosition(x, y);
+            const wp = this.gridPositionToWorldPosition(gp.x, gp.y);
+
+            this.selectedTower.gp = gp;
+            this.selectedTower.x = wp.x;
+            this.selectedTower.y = wp.y;
+
+            this.selectedTower.placingValid = true;
+
+            if (!this.selectedTower.canPutdown(this)) {
+                this.selectedTower.placingValid = false;
+                this.selectedTower.alpha = 0.5;
+            } else {
+                this.selectedTower.alpha = 1;
+                this.selectedTower.putdown(this);
+                const targets = aStar(this.grid, {
+                    x: 0,
+                    y: Math.floor(gridY / 2),
+                }, { x: 25, y: 7 });
+                if (targets.length === 0) {
+                    this.selectedTower.placingValid = false;
+                }
+                this.selectedTower.liftup(this);
+            }
         }
     }
 
@@ -627,6 +791,8 @@ export class Game extends EventEmitter {
 
             // If it's gameover we don't update anything.
             if (!this.gameover) {
+                stepPhysics(delta);
+
                 // Tight update loops to make full use of the CPU caches and JIT optimizations.
                 for (let i = 0; i < this.enemiesContainer.children.length; i++) {
                     const enemy = this.enemiesContainer.children[i];
@@ -681,6 +847,8 @@ export class Game extends EventEmitter {
         while (this.app.stage.children.length > 0) {
             this.app.stage.children[0].destroy({ children: true });
         }
+
+        destroyPhysics();
 
         window.removeEventListener('resize', this.resizeHandler);
         window.removeEventListener('orientationchange', this.resizeHandler);

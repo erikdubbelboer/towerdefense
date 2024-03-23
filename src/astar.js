@@ -1,3 +1,22 @@
+
+function heuristic(node, target) {
+    // Manhattan distance as heuristic
+    return Math.abs(node.x - target.x) + Math.abs(node.y - target.y);
+}
+
+function getNeighbors(node, grid) {
+    const directions = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // Up, Right, Down, Left
+    const neighbors = [];
+    for (const [dx, dy] of directions) {
+        const x = node.x + dx;
+        const y = node.y + dy;
+        if (x >= 0 && x < grid.length && y >= 0 && y < grid[0].length && grid[x][y].nav === 0) {
+            neighbors.push({ x, y, g: 0, h: 0, f: 0, parent: null });
+        }
+    }
+    return neighbors;
+}
+
 // Grid is a 2D array of numbers. > 1 is a wall.
 // The function returns an array of {x, y} objects representing the path.
 export function aStar(grid, me, target) {
@@ -8,11 +27,11 @@ export function aStar(grid, me, target) {
     openSet.push(start);
 
     while (openSet.length > 0) {
-        let current = openSet.sort((a, b) => a.f - b.f)[0];
+        const current = openSet.sort((a, b) => a.f - b.f)[0];
 
         if (current.x === target.x && current.y === target.y) {
             // Target reached, construct the path
-            let path = [];
+            const path = [];
             let temp = current;
             while (temp !== null) {
                 path.unshift({ x: temp.x, y: temp.y });
@@ -24,13 +43,13 @@ export function aStar(grid, me, target) {
         openSet.splice(openSet.indexOf(current), 1);
         closedSet.push(current);
 
-        let neighbors = getNeighbors(current, grid);
-        for (let neighbor of neighbors) {
+        const neighbors = getNeighbors(current, grid);
+        for (const neighbor of neighbors) {
             if (closedSet.some(closedNode => closedNode.x === neighbor.x && closedNode.y === neighbor.y)) {
                 continue; // Already evaluated
             }
 
-            let tentativeGScore = current.g + 1; // Assuming uniform cost
+            const tentativeGScore = current.g + 1; // Assuming uniform cost
 
             if (!openSet.some(node => node.x === neighbor.x && node.y === neighbor.y)) {
                 openSet.push(neighbor); // Discovered a new node
@@ -48,24 +67,6 @@ export function aStar(grid, me, target) {
 
     // No path found
     return [];
-}
-
-function heuristic(node, target) {
-    // Manhattan distance as heuristic
-    return Math.abs(node.x - target.x) + Math.abs(node.y - target.y);
-}
-
-function getNeighbors(node, grid) {
-    const directions = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // Up, Right, Down, Left
-    const neighbors = [];
-    for (let [dx, dy] of directions) {
-        const x = node.x + dx;
-        const y = node.y + dy;
-        if (x >= 0 && x < grid.length && y >= 0 && y < grid[0].length && grid[x][y] <= 1) {
-            neighbors.push({ x, y, g: 0, h: 0, f: 0, parent: null });
-        }
-    }
-    return neighbors;
 }
 
 export function turnsOnly(path) {
@@ -104,17 +105,13 @@ function hasLineOfSight(grid, start, end) {
 
     let err = dx - dy;
 
-    while (true) {
-        if (x0 === x1 && y0 === y1) {
-            break;
-        }
-
+    while (x0 !== x1 || y0 !== y1) {
         // Check the current cell for an obstacle
-        if (grid[x0][y0] > 1) {
+        if (grid[x0][y0].nav > 0) {
             return false; // Obstacle encountered
         }
 
-        let e2 = 2 * err;
+        const e2 = 2 * err;
         if (e2 > -dy) {
             err -= dy;
             x0 += sx;
@@ -132,7 +129,7 @@ function hasLineOfSight(grid, start, end) {
 export function simplifyPath(grid, fullPath) {
     if (fullPath.length < 3) return fullPath; // If the path is too short, no simplification is needed
 
-    let simplifiedPath = [fullPath[fullPath.length - 1]]; // Start with the target position
+    const simplifiedPath = [fullPath[fullPath.length - 1]]; // Start with the target position
     let lastValidIndex = fullPath.length - 1;
 
     for (let i = fullPath.length - 2; i >= 0; i--) {

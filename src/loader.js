@@ -2,7 +2,11 @@ import * as PIXI from 'pixi.js';
 import { Assets } from '@pixi/assets';
 import { default as EventEmitter } from 'eventemitter3';
 
+import Box2DFactory from './box2d-wasm';
+
 import { init as initEnemy } from './enemy';
+import { init as initPhysics } from './physics';
+import { init as initTowers } from './tower';
 import { Sounds } from './sounds';
 import { isSafari14OrLower } from './util';
 
@@ -56,6 +60,17 @@ export class Loader extends EventEmitter {
     }
 
     postload() {
+        let box2dDone;
+        Box2DFactory().then((Box2D) => {
+            window.Box2D = Box2D;
+
+            if (!box2dDone) {
+                box2dDone = true;
+            } else {
+                box2dDone();
+            }
+        });
+
         const width = window.innerWidth * 1.2;
         const height = window.innerHeight * 1.2;
 
@@ -86,6 +101,23 @@ export class Loader extends EventEmitter {
         [
             () => {
                 initEnemy(this.app);
+            },
+            () => {
+                initTowers(this.app);
+            },
+            () => {
+                this.loadingText.innerText = 'loading physics...';
+
+                if (box2dDone) {
+                    return;
+                } 
+                    return new window.Promise((resolve) => {
+                        box2dDone = resolve;
+                    });
+                
+            },
+            () => {
+                initPhysics();
             },
             () => {
                 this.sounds = new Sounds();

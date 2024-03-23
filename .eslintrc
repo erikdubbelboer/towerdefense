@@ -19,6 +19,8 @@
         "prefer-const": 1
     },
     "globals": {
+        "Box2D": "readonly",
+        "Box2DScale": "readonly",
         "PokiSDK": "readonly"
     }
 }

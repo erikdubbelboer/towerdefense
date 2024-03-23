@@ -1,3 +1,4 @@
 dist/
 public/index.js
 public/menu.js
+src/box2d-wasm.js
